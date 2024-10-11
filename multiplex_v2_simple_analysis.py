@@ -250,7 +250,7 @@ class MultiplexTrial:
 Main segment of code that runs the functions
 """
 # file_path = "/Users/zivbentulila/Library/CloudStorage/GoogleDrive-zivbental@gmail.com/My Drive/Work/MSc Neuroscience/Moshe Parnas/Experiments/Serotonergic system/5ht_behavior/operant_conditioning/raw_data/behavior/13.8.24/5ht_rnai/mb247/20240813_075645_Log.txt"
-file_path = "C:/Users/user/Documents/Results/Ziv/wild_type_control/operant_long_shock_80v_thresh_30/08.10.2024/trial_5/fly_loc.csv"
+file_path = "C:/Users/user/Documents/Results/Ziv/5ht_receptors_knockdown_operant/5ht1a_rnai/11.10.2024/trial_6/fly_loc.csv"
 
 # Create a MultiplexTrial object
 trial_1 = MultiplexTrial()

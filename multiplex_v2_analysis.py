@@ -200,4 +200,4 @@ def analyze_experiment_folder(folder_path, threshold):
     print(f"Plots saved to {output_fig_path}")
 
 # Example Usage:
-analyze_experiment_folder('C:/Users/user/Documents/Results/Ziv/wild_type_control/operant_long_shock_80v_thresh_30', threshold=4)
+analyze_experiment_folder('C:/Users/user/Documents/Results/Ziv/5ht_receptors_knockdown_operant/5ht1a_rnai', threshold=1)
