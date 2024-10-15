@@ -4,6 +4,11 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import os
 import json
+from scipy import stats
+from statsmodels.stats.multicomp import pairwise_tukeyhsd
+from scipy.stats import kruskal
+import statsmodels.api as sm
+from statsmodels.formula.api import ols
 
 class MultiplexTrial:
     def __init__(self) -> None:
@@ -110,16 +115,31 @@ class MultiplexTrial:
         return learned_index
 
 
-def analyze_experiment_folder(folder_path, threshold):
+def analyze_experiment_folder(folder_path, threshold, control_groups, experimental_groups):
     """
-    This function analyzes all the trials in a given folder, organizes the results by genotype, and outputs
-    a CSV file with the final results. It also creates and saves a figure with bar plots, box plots, and swirl plots.
-    The output will be stored in a subfolder named 'output' inside the provided folder path.
+    This function analyzes all trials, organizes results by genotype, and outputs a CSV file with final results. 
+    It also creates and saves a figure with bar plots, box plots, and swirl plots.
     """
-    # Step 1: Initialize an empty DataFrame to hold all trial data
+    # Step 1: Initialize an empty DataFrame
     all_trials_data = pd.DataFrame()
 
-    # Step 2: Traverse the folder structure
+    # Step 2: Traverse folder structure and collect data
+    all_trials_data = collect_trial_data(folder_path, all_trials_data, threshold)
+
+    # Step 3: Clean the DataFrame
+    all_trials_data_cleaned = clean_trial_data(all_trials_data)
+
+    # Step 4: Perform statistical analysis
+    stats_results = perform_statistical_analysis(all_trials_data_cleaned, control_groups, experimental_groups)
+
+    # Step 5: Save the cleaned data and stats results to CSV
+    save_results_to_csv(folder_path, all_trials_data_cleaned, stats_results)
+
+    # Step 6: Create and save the plots with significance markers
+    create_and_save_plots(folder_path, all_trials_data_cleaned, stats_results)
+
+
+def collect_trial_data(folder_path, all_trials_data, threshold):
     for date_folder in os.listdir(folder_path):
         date_path = os.path.join(folder_path, date_folder)
 
@@ -128,12 +148,11 @@ def analyze_experiment_folder(folder_path, threshold):
                 trial_path = os.path.join(date_path, trial_folder)
 
                 if os.path.isdir(trial_path):
-                    # Load metadata and CSV data
                     metadata_path = os.path.join(trial_path, 'experiment_metadata.json')
                     data_path = os.path.join(trial_path, 'fly_loc.csv')
 
                     if os.path.exists(metadata_path) and os.path.exists(data_path):
-                        # Read the metadata file
+                        # Load metadata
                         with open(metadata_path, 'r') as f:
                             metadata = json.load(f)
                         fly_genotype = metadata.get('flyGenotype')
@@ -144,60 +163,246 @@ def analyze_experiment_folder(folder_path, threshold):
                         trial.filter_by_num_choices(midline_borders=0.6, threshold=threshold, filter='both')
                         learned_index = trial.analyse_time()
 
-                        # Convert the trial's learned index into a DataFrame for appending
+                        # Convert trial's learned index to DataFrame and append
                         trial_data = pd.DataFrame({fly_genotype: learned_index})
-
-                        # Append the trial data to the main DataFrame
                         all_trials_data = pd.concat([all_trials_data, trial_data], ignore_index=True)
+    
+    return all_trials_data
 
-    # Step 3: Remove empty values (NaN) from each column
-    all_trials_data_cleaned = all_trials_data.apply(lambda x: x.dropna().reset_index(drop=True))
+def clean_trial_data(all_trials_data):
+    # Remove NaN values and reset indices
+    return all_trials_data.apply(lambda x: x.dropna().reset_index(drop=True))
 
-    # Step 4: Create an output folder within the folder path
+def perform_statistical_analysis(all_trials_data, control_groups, experimental_groups):
+    """
+    Perform statistical analysis between the experimental group(s) and each control group.
+    Output the normality and variance check results along with the final statistical test result.
+    Handles multiple comparisons and selects the appropriate test based on assumptions.
+    """
+    stats_results = []
+    num_comparisons = len(control_groups) * len(experimental_groups)  # For Bonferroni correction
+
+    for control in control_groups:
+        for exp in experimental_groups:
+            # Ensure data is numeric and drop NaNs
+            control_data = pd.to_numeric(all_trials_data[control], errors='coerce').dropna()
+            experimental_data = pd.to_numeric(all_trials_data[exp], errors='coerce').dropna()
+
+            # Step 1: Check normality (Shapiro-Wilk test)
+            control_normality_p = stats.shapiro(control_data).pvalue
+            experimental_normality_p = stats.shapiro(experimental_data).pvalue
+            normality_pass = control_normality_p > 0.05 and experimental_normality_p > 0.05
+
+            # Step 2: Check equal variance (Levene's test)
+            levene_p = stats.levene(control_data, experimental_data).pvalue
+            equal_variance_pass = levene_p > 0.05
+
+            # Step 3: Select the appropriate test
+            if normality_pass and equal_variance_pass:
+                # Use One-Way ANOVA since assumptions are met
+                data = pd.concat([control_data, experimental_data], axis=0)
+                group_labels = [control] * len(control_data) + [exp] * len(experimental_data)
+
+                # Fit the ANOVA model
+                model = ols('data ~ group_labels', data=pd.DataFrame({"data": data, "group_labels": group_labels})).fit()
+                anova_result = sm.stats.anova_lm(model, typ=2)
+
+                # If ANOVA is significant, run post-hoc Tukey's test
+                if anova_result['PR(>F)'].iloc[0] < 0.05 / num_comparisons:  # Bonferroni correction
+                    posthoc = pairwise_tukeyhsd(endog=data, groups=group_labels, alpha=0.05 / num_comparisons)
+                    test_type = "ANOVA + Tukey's HSD"
+                    test_statistic = anova_result['F'].iloc[0]
+                    p_value = anova_result['PR(>F)'].iloc[0]
+                else:
+                    test_type = "ANOVA (not significant)"
+                    test_statistic = anova_result['F'].iloc[0]
+                    p_value = anova_result['PR(>F)'].iloc[0]
+
+            else:
+                # Use Kruskal-Wallis test if normality or equal variance fails
+                kruskal_result = kruskal(control_data, experimental_data)
+                test_type = "Kruskal-Wallis"
+                test_statistic = kruskal_result.statistic
+                p_value = kruskal_result.pvalue
+
+                # If Kruskal-Wallis is significant, run post-hoc Mann-Whitney U test with Bonferroni correction
+                if p_value < 0.05 / num_comparisons:
+                    mannwhitney_result = stats.mannwhitneyu(control_data, experimental_data, alternative='two-sided')
+                    posthoc_test_type = "Mann-Whitney U Test"
+                    posthoc_statistic = mannwhitney_result.statistic
+                    posthoc_p_value = mannwhitney_result.pvalue
+                    p_value = posthoc_p_value
+                    test_type += f" + {posthoc_test_type}"
+
+            # Append results for this comparison with detailed checks
+            stats_results.append({
+                'Comparison': f'{exp} vs {control}',
+                'Control Normality (p-value)': control_normality_p,
+                'Experimental Normality (p-value)': experimental_normality_p,
+                'Normality Assumption Pass': normality_pass,
+                'Levene’s Test (p-value)': levene_p,
+                'Equal Variance Assumption Pass': equal_variance_pass,
+                'Test Type': test_type,
+                'Test Statistic': test_statistic,
+                'Test p-value': p_value
+            })
+
+    # Create a DataFrame for stats results
+    stats_results_df = pd.DataFrame(stats_results)
+    return stats_results_df
+
+
+
+def save_results_to_csv(folder_path, all_trials_data_cleaned, stats_results):
+    # Create output folder if it doesn't exist
     output_folder = os.path.join(folder_path, 'output')
     if not os.path.exists(output_folder):
         os.makedirs(output_folder)
     
-    # Step 5: Output the final DataFrame to a CSV file in the output folder
+    # Save the cleaned data
     output_csv_path = os.path.join(output_folder, 'experiment_results_cleaned.csv')
     all_trials_data_cleaned.to_csv(output_csv_path, index=False)
     print(f"Cleaned results saved to {output_csv_path}")
 
-    # Step 6: Reshape the data for plotting (melt the DataFrame to long format)
+    # Save the statistical results
+    output_stats_path = os.path.join(output_folder, 'statistical_results.csv')
+    stats_results.to_csv(output_stats_path, index=False)
+    print(f"Statistical results saved to {output_stats_path}")
+
+def create_and_save_plots(folder_path, all_trials_data_cleaned, stats_results):
+    """
+    Creates and saves a combined figure with bar plot, box plot, and swirl plot, 
+    and also saves each plot individually in a folder.
+    """
+    # Reshape data for plotting
     all_trials_data_long = all_trials_data_cleaned.melt(var_name='Genotype', value_name='Learned Index')
 
-    # Step 7: Generate the bar plot, box plot, and swirl plot
+    # Create a folder for the plots
+    output_folder = os.path.join(folder_path, 'output', 'plots')
+    if not os.path.exists(output_folder):
+        os.makedirs(output_folder)
+
+    # Combined Figure
+    combined_fig_path = os.path.join(output_folder, 'combined_experiment_plots.png')
     plt.figure(figsize=(20, 10))
 
     # Bar Plot
-    plt.subplot(1, 3, 1)
-    sns.barplot(data=all_trials_data_long, x='Genotype', y='Learned Index')
+    plt.subplot(1, 3, 1)  # Now adding plt.subplot here for combined figure
+    create_bar_plot(all_trials_data_long, stats_results)
+
+    # Box Plot
+    plt.subplot(1, 3, 2)  # Define subplot for box plot in the combined figure
+    create_box_plot(all_trials_data_long)
+
+    # Swirl Plot
+    plt.subplot(1, 3, 3)  # Define subplot for swirl plot in the combined figure
+    create_swirl_plot(all_trials_data_long)
+
+    # Save the combined figure
+    plt.tight_layout()
+    plt.savefig(combined_fig_path, dpi=300)
+    print(f"Combined plots saved to {combined_fig_path}")
+    plt.clf()  # Clear the figure for further plots
+
+    # Save each individual plot
+    save_individual_plots(output_folder, all_trials_data_long, stats_results)
+
+
+def save_individual_plots(output_folder, data, stats_results):
+    """
+    Saves each individual plot (bar plot, box plot, swirl plot) in separate image files.
+    """
+
+    # Save Bar Plot
+    bar_plot_path = os.path.join(output_folder, 'bar_plot.png')
+    plt.figure(figsize=(6, 5))
+    create_bar_plot(data, stats_results)
+    plt.savefig(bar_plot_path, dpi=300)
+    print(f"Bar plot saved to {bar_plot_path}")
+    plt.clf()  # Clear the figure
+
+    # Save Box Plot
+    box_plot_path = os.path.join(output_folder, 'box_plot.png')
+    plt.figure(figsize=(6, 5))
+    create_box_plot(data)
+    plt.savefig(box_plot_path, dpi=300)
+    print(f"Box plot saved to {box_plot_path}")
+    plt.clf()  # Clear the figure
+
+    # Save Swirl Plot
+    swirl_plot_path = os.path.join(output_folder, 'swirl_plot.png')
+    plt.figure(figsize=(6, 5))
+    create_swirl_plot(data)
+    plt.savefig(swirl_plot_path, dpi=300)
+    print(f"Swirl plot saved to {swirl_plot_path}")
+    plt.clf()  # Clear the figure
+
+
+def create_bar_plot(data, stats_results):
+    """
+    Creates a bar plot. Removed plt.subplot so it's flexible for individual and combined plots.
+    """
+    # Plot the error bars first with a lower zorder
+    sns.barplot(data=data, x='Genotype', y='Learned Index', hue='Genotype', 
+                palette="deep", errorbar="se", estimator="mean", capsize=0.1, zorder=5)
+
+    # Plot the mean bars again without error bars with a higher zorder
+    sns.barplot(data=data, x='Genotype', y='Learned Index', hue='Genotype', 
+                palette="deep", errorbar=None, estimator="mean", edgecolor=".2", zorder=10)
+
+    # Annotate significance
+    add_statistical_annotations(stats_results)
+
     plt.ylim(-1, 1)
     plt.title('Bar Plot of Learned Index')
     plt.ylabel('Learned Index')
     plt.xlabel('Genotype')
 
-    # Box Plot
-    plt.subplot(1, 3, 2)
-    sns.boxplot(data=all_trials_data_long, x='Genotype', y='Learned Index')
+def create_box_plot(data):
+    """
+    Creates a box plot. Removed plt.subplot so it's flexible for individual and combined plots.
+    """
+    sns.boxplot(data=data, x='Genotype', y='Learned Index', palette="deep", hue='Genotype')
     plt.ylim(-1, 1)
     plt.title('Box Plot of Learned Index')
     plt.ylabel('Learned Index')
     plt.xlabel('Genotype')
 
-    # Swirl Plot (Strip plot with jitter to show individual data points)
-    plt.subplot(1, 3, 3)
-    sns.swarmplot(data=all_trials_data_long, x='Genotype', y='Learned Index', dodge=True)
+def create_swirl_plot(data):
+    """
+    Creates a swirl plot (swarm plot). Adjusted to center the points in each group.
+    """
+    sns.swarmplot(data=data, x='Genotype', y='Learned Index', palette="deep", hue="Genotype")
     plt.ylim(-1, 1)
     plt.title('Swirl Plot of Learned Index')
     plt.ylabel('Learned Index')
     plt.xlabel('Genotype')
 
-    # Adjust layout and save the figure to the output folder
-    plt.tight_layout()
-    output_fig_path = os.path.join(output_folder, 'experiment_plots.png')
-    plt.savefig(output_fig_path, dpi=300)
-    print(f"Plots saved to {output_fig_path}")
+def add_statistical_annotations(stats_results):
+    """
+    Add asterisks to indicate statistical significance on the bar plot.
+    """
+    significance_threshold = 0.05
+
+    # Loop through each comparison result to add annotations
+    for index, row in stats_results.iterrows():
+        p_value = row['Test p-value']  # Updated to match the correct key name
+        comparison = row['Comparison']
+
+        # Split the comparison to get the group indices
+        groups = comparison.split(" vs ")
+        control_index = int(groups[1][-1]) - 1  # Extract the group number
+        exp_index = int(groups[0][-1]) - 1
+
+        # Add annotation if significant
+        if p_value < significance_threshold:
+            plt.text((control_index + exp_index) / 2, 0.9, '*', ha='center', va='bottom', color='black', fontsize=20)
+
 
 # Example Usage:
-analyze_experiment_folder('C:/Users/user/Documents/Results/Ziv/5ht_receptors_knockdown_operant/5ht1a_rnai', threshold=1)
+analyze_experiment_folder(
+    folder_path='G:/My Drive/Work/PhD Neuroscience/Moshe Parnas/Experiments/Serotonergic system/5ht_behavior/raw_data/multiplex/5ht_receptors_knockdown_classical/5ht1a_rnai', 
+    threshold=4, 
+    control_groups=['w1118x33885', 'w1118xmb247'], 
+    experimental_groups=['33885xmb247']
+)
