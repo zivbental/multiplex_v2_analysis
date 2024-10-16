@@ -173,11 +173,11 @@ def clean_trial_data(all_trials_data):
     # Remove NaN values and reset indices
     return all_trials_data.apply(lambda x: x.dropna().reset_index(drop=True))
 
-def perform_statistical_analysis(all_trials_data, control_groups, experimental_groups):
+def perform_statistical_analysis(all_trials_data, control_groups, experimental_groups, num_permutations=10000):
     """
     Perform statistical analysis between the experimental group(s) and each control group.
     Output the normality and variance check results along with the final statistical test result.
-    Handles multiple comparisons and selects the appropriate test based on assumptions.
+    If normality fails, perform a permutation test instead of parametric or non-parametric alternatives.
     """
     stats_results = []
     num_comparisons = len(control_groups) * len(experimental_groups)  # For Bonferroni correction
@@ -217,22 +217,11 @@ def perform_statistical_analysis(all_trials_data, control_groups, experimental_g
                     test_type = "ANOVA (not significant)"
                     test_statistic = anova_result['F'].iloc[0]
                     p_value = anova_result['PR(>F)'].iloc[0]
-
             else:
-                # Use Kruskal-Wallis test if normality or equal variance fails
-                kruskal_result = kruskal(control_data, experimental_data)
-                test_type = "Kruskal-Wallis"
-                test_statistic = kruskal_result.statistic
-                p_value = kruskal_result.pvalue
-
-                # If Kruskal-Wallis is significant, run post-hoc Mann-Whitney U test with Bonferroni correction
-                if p_value < 0.05 / num_comparisons:
-                    mannwhitney_result = stats.mannwhitneyu(control_data, experimental_data, alternative='two-sided')
-                    posthoc_test_type = "Mann-Whitney U Test"
-                    posthoc_statistic = mannwhitney_result.statistic
-                    posthoc_p_value = mannwhitney_result.pvalue
-                    p_value = posthoc_p_value
-                    test_type += f" + {posthoc_test_type}"
+                # Use permutation test if normality or equal variance fails
+                observed_diff, p_value = permutation_test(control_data, experimental_data, num_permutations=num_permutations)
+                test_type = "Permutation Test"
+                test_statistic = observed_diff
 
             # Append results for this comparison with detailed checks
             stats_results.append({
@@ -250,6 +239,39 @@ def perform_statistical_analysis(all_trials_data, control_groups, experimental_g
     # Create a DataFrame for stats results
     stats_results_df = pd.DataFrame(stats_results)
     return stats_results_df
+
+import numpy as np
+
+def permutation_test(group1, group2, num_permutations=1000):
+    """
+    Perform a permutation test to compare the means of two groups.
+    Returns the p-value for the observed difference in means.
+    """
+    # Combine the data
+    combined = np.concatenate([group1, group2])
+
+    # Compute the observed test statistic (difference in means)
+    observed_diff = np.mean(group1) - np.mean(group2)
+
+    # Initialize an array to store permuted test statistics
+    permuted_diffs = np.zeros(num_permutations)
+
+    # Permutation loop
+    for i in range(num_permutations):
+        # Shuffle the combined data
+        np.random.shuffle(combined)
+        
+        # Split the shuffled data into two groups
+        perm_group1 = combined[:len(group1)]
+        perm_group2 = combined[len(group1):]
+        
+        # Compute the permuted test statistic (difference in means)
+        permuted_diffs[i] = np.mean(perm_group1) - np.mean(perm_group2)
+
+    # Calculate the p-value
+    p_value = np.mean(np.abs(permuted_diffs) >= np.abs(observed_diff))
+
+    return observed_diff, p_value
 
 
 
