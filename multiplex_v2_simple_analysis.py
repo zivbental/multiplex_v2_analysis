@@ -171,9 +171,6 @@ class MultiplexTrial:
         valence_denominator = valence_df.iloc[1] + valence_df.iloc[0]
         test_denominator = test_df.iloc[0] + test_df.iloc[1]
 
-        print(valence_df)
-        print(test_df)
-
         # Create a mask to filter out rows where either valence or test denominator is zero
         combined_mask = (valence_denominator != 0) & (test_denominator != 0)
 
@@ -182,12 +179,19 @@ class MultiplexTrial:
         filtered_test_df = test_df.loc[:, combined_mask]
 
         # Calculate initial valence and end valence using the filtered data
-        initial_val = (filtered_valence_df.iloc[0] - filtered_valence_df.iloc[1]) / (filtered_valence_df.iloc[1] + filtered_valence_df.iloc[0])
-        end_valence = (filtered_test_df.iloc[1] - filtered_test_df.iloc[0]) / (filtered_test_df.iloc[0] + filtered_test_df.iloc[1])
+        # initial_val = (filtered_valence_df.iloc[0] - filtered_valence_df.iloc[1]) / (filtered_valence_df.iloc[1] + filtered_valence_df.iloc[0])
+        # end_valence = (filtered_test_df.iloc[1] - filtered_test_df.iloc[0]) / (filtered_test_df.iloc[0] + filtered_test_df.iloc[1])
+
+        initial_val = (filtered_valence_df.iloc[1]) / 120
+        print("Time before")
+        print(initial_val*100)
+        end_valence = (filtered_test_df.iloc[0]) / 120
+
 
         # Calculate the learned index based on the filtered data
-        learned_index = (end_valence - initial_val) / 2
+        learned_index = (end_valence - initial_val)*100
 
+        print("Learned Index")
         print(learned_index)
         print(learned_index.mean())
 
@@ -249,8 +253,8 @@ class MultiplexTrial:
 """
 Main segment of code that runs the functions
 """
-# file_path = "/Users/zivbentulila/Library/CloudStorage/GoogleDrive-zivbental@gmail.com/My Drive/Work/MSc Neuroscience/Moshe Parnas/Experiments/Serotonergic system/5ht_behavior/operant_conditioning/raw_data/behavior/13.8.24/5ht_rnai/mb247/20240813_075645_Log.txt"
-file_path = "C:/Users/user/Documents/Results/Ziv/5ht_receptors_knockdown_operant/5ht1a_rnai/11.10.2024/trial_6/fly_loc.csv"
+# file_path = "G:/My Drive/Work/PhD Neuroscience/Moshe Parnas/Experiments/Serotonergic system/5ht_behavior/raw_data/multiplex/5ht_receptors_knockdown_classical/5ht1a_rnai/13.10.2024/trial_5/fly_loc.csv"
+file_path = "C:/Users/zivbe/OneDrive/שולחן העבודה/Julia/VID/VID_odor_shock/10.03.2025/trial_5/fly_loc.csv"
 
 # Create a MultiplexTrial object
 trial_1 = MultiplexTrial()
@@ -258,7 +262,7 @@ trial_1 = MultiplexTrial()
 # Load a single Trial to the object
 trial_1.load_data(file_path)
 
-trial_1.filter_by_num_choices(midline_borders=0.6, threshold=1, filter='both')
+trial_1.filter_by_num_choices(midline_borders=0.6, threshold=4, filter='both')
 
 trial_1.analyse_time()
 
