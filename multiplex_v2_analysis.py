@@ -79,14 +79,35 @@ class MultiplexTrial:
     def analyse_time(self):
         valence_df = self.time_spent(self.processed_data[0])
         test_df = self.time_spent(self.processed_data[1])
+
+        # Create denominators for valence_df and test_df
         valence_denominator = valence_df.iloc[1] + valence_df.iloc[0]
         test_denominator = test_df.iloc[0] + test_df.iloc[1]
+
+        # Create a mask to filter out rows where either valence or test denominator is zero
         combined_mask = (valence_denominator != 0) & (test_denominator != 0)
+
+        # Apply the mask to both valence_df and test_df
         filtered_valence_df = valence_df.loc[:, combined_mask]
         filtered_test_df = test_df.loc[:, combined_mask]
-        initial_val = (filtered_valence_df.iloc[0] - filtered_valence_df.iloc[1]) / (filtered_valence_df.iloc[1] + filtered_valence_df.iloc[0])
-        end_valence = (filtered_test_df.iloc[1] - filtered_test_df.iloc[0]) / (filtered_test_df.iloc[0] + filtered_test_df.iloc[1])
-        learned_index = (end_valence - initial_val) / 2
+
+        # Filter out columns where initial_val (filtered_valence_df.iloc[1]) is less than 30
+        initial_val_filter = filtered_valence_df.iloc[1] >= 30
+
+        filtered_valence_df = filtered_valence_df.loc[:, initial_val_filter]
+        filtered_test_df = filtered_test_df.loc[:, initial_val_filter]
+
+        # Calculate initial valence and end valence using the filtered data
+        initial_val = (filtered_valence_df.iloc[1]) / (filtered_valence_df.iloc[0] + filtered_valence_df.iloc[1])
+        end_valence = (filtered_test_df.iloc[0]) / (filtered_test_df.iloc[0] + filtered_test_df.iloc[1])
+
+        # Calculate the learned index based on the filtered data
+        learned_index = (end_valence - initial_val) * 100
+        
+
+
+        # Calculate the learned index based on the filtered data
+        learned_index = (end_valence - initial_val)*100
         return learned_index
 
 def analyze_experiment_folder(folder_path, threshold, control_groups, experimental_groups):
@@ -296,8 +317,8 @@ def calculate_sample_size(data):
 
 # Example Usage:
 analyze_experiment_folder(
-    folder_path='G:/My Drive/Work/PhD Neuroscience/Moshe Parnas/Experiments/Serotonergic system/5ht_behavior/raw_data/multiplex/5ht_receptors_knockdown_classical/5ht1a_rnai', 
+    folder_path='//132.66.94.156/Ziv/multiplex/Danielle/training/w1118_learning', 
     threshold=4, 
-    control_groups=['w1118x33885', 'w1118xmb247'], 
-    experimental_groups=['33885xmb247', '33885xmb504']
+    control_groups=['w1118'], 
+    experimental_groups=['w1118']
 )

@@ -125,7 +125,7 @@ class MultiplexTrial:
         return filtered_df
     
     @staticmethod
-    def time_spent(df, width_size=20, sampling_rate=0.1):
+    def time_spent(df, width_size=10, sampling_rate=0.1):
         """
         This function determines which 'side' the fly is currently in based on the given width_size.
         It then calculates the time the fly spent on each side of the chamber.
@@ -178,14 +178,27 @@ class MultiplexTrial:
         filtered_valence_df = valence_df.loc[:, combined_mask]
         filtered_test_df = test_df.loc[:, combined_mask]
 
-        # Calculate initial valence and end valence using the filtered data
-        # initial_val = (filtered_valence_df.iloc[0] - filtered_valence_df.iloc[1]) / (filtered_valence_df.iloc[1] + filtered_valence_df.iloc[0])
-        # end_valence = (filtered_test_df.iloc[1] - filtered_test_df.iloc[0]) / (filtered_test_df.iloc[0] + filtered_test_df.iloc[1])
+        # Filter out columns where initial_val (filtered_valence_df.iloc[1]) is less than 30
+        initial_val_filter = filtered_valence_df.iloc[1] >= 30
 
-        initial_val = (filtered_valence_df.iloc[1]) / 120
+        filtered_valence_df = filtered_valence_df.loc[:, initial_val_filter]
+        filtered_test_df = filtered_test_df.loc[:, initial_val_filter]
+
+        # Calculate initial valence and end valence using the filtered data
+        # initial_val = (filtered_valence_df.iloc[1]) / 120
+        # end_valence = (filtered_test_df.iloc[0]) / 120
+
+        # Option B
+        initial_val = (filtered_valence_df.iloc[1]) / (filtered_valence_df.iloc[0] + filtered_valence_df.iloc[1])
+        end_valence = (filtered_test_df.iloc[0]) / (filtered_test_df.iloc[0] + filtered_test_df.iloc[1])
+
+        # Calculate the learned index based on the filtered data
+        learned_index = (end_valence - initial_val) * 100
         print("Time before")
         print(initial_val*100)
-        end_valence = (filtered_test_df.iloc[0]) / 120
+        print("Time After")
+        print(end_valence*100)
+        
 
 
         # Calculate the learned index based on the filtered data
@@ -253,8 +266,8 @@ class MultiplexTrial:
 """
 Main segment of code that runs the functions
 """
-# file_path = "G:/My Drive/Work/PhD Neuroscience/Moshe Parnas/Experiments/Serotonergic system/5ht_behavior/raw_data/multiplex/5ht_receptors_knockdown_classical/5ht1a_rnai/13.10.2024/trial_5/fly_loc.csv"
-file_path = "C:/Users/zivbe/OneDrive/שולחן העבודה/Julia/VID/VID_odor_shock/10.03.2025/trial_5/fly_loc.csv"
+file_path = "//132.66.94.156/Ziv/multiplex/Danielle/training/w1118_learning/26.03.2025/trial_2/fly_loc.csv"
+# file_path = "C:/Users/user/Documents/Results/Dekel/MchRB_Voltage_independent/mchrb-VID/12.03.2025/trial_7/fly_loc.csv"
 
 # Create a MultiplexTrial object
 trial_1 = MultiplexTrial()
@@ -265,4 +278,5 @@ trial_1.load_data(file_path)
 trial_1.filter_by_num_choices(midline_borders=0.6, threshold=4, filter='both')
 
 trial_1.analyse_time()
+
 
